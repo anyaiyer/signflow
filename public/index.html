@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SignFlow</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg:         #0c0c0a;
+  --surface:    #151512;
+  --surface2:   #1c1c19;
+  --border:     rgba(255,255,255,0.09);
+  --border-d:   rgba(255,255,255,0.05);
+  --gold:       #c9a84c;
+  --gold-dim:   #8a7234;
+  --cream:      #f0ede6;
+  --muted:      #5a5852;
+  --muted2:     #7a756d;
+  --green:      #3d7a50;
+  --green-bg:   #162b1f;
+  --green-txt:  #5dba7d;
+  --red-bg:     #2a1512;
+  --amber:      #c97c12;
+  --radius:     12px;
+  --radius-sm:  8px;
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  font-family:'DM Sans',sans-serif;
+  background:var(--bg);
+  color:var(--cream);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── Header ── */
+header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:22px 48px;
+  border-bottom:1px solid var(--border-d);
+  position:sticky; top:0; z-index:100;
+  background:rgba(12,12,10,0.92);
+  backdrop-filter:blur(12px);
+}
+.logo { font-family:'Playfair Display',serif; font-size:1.45rem; font-weight:700; color:var(--cream); }
+.logo em { font-style:italic; color:var(--gold); }
+.header-badge {
+  font-size:0.68rem; font-weight:500; letter-spacing:0.18em; text-transform:uppercase;
+  color:var(--muted2); border:1px solid rgba(255,255,255,0.12); padding:7px 16px; border-radius:100px;
+}
+
+/* ── Hero ── */
+.hero { max-width:760px; margin:0 auto; padding:72px 40px 0; }
+.hero-eyebrow { font-size:0.68rem; font-weight:500; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); margin-bottom:20px; }
+.hero h1 { font-family:'Playfair Display',serif; font-size:clamp(2.8rem,5vw,4rem); font-weight:900; line-height:1.08; color:var(--cream); }
+.hero h1 em { font-style:italic; color:var(--gold); display:block; }
+.hero-sub { font-size:1rem; color:var(--muted2); line-height:1.65; max-width:500px; margin:20px 0 0; }
+
+/* ── Main wrap ── */
+.main-wrap { max-width:760px; margin:0 auto; padding:48px 40px 100px; }
+
+/* ── Tabs ── */
+.tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:48px; }
+.tab {
+  padding:12px 0; margin-right:32px; font-size:0.72rem; font-weight:500;
+  letter-spacing:0.14em; text-transform:uppercase; cursor:pointer;
+  border:none; background:none; color:var(--muted);
+  border-bottom:1px solid transparent; margin-bottom:-1px; transition:all .2s;
+}
+.tab.active { color:var(--cream); border-bottom-color:var(--gold); }
+.tab:hover:not(.active) { color:var(--muted2); }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+/* ── Section label ── */
+.section-label { font-size:0.68rem; font-weight:500; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); margin-bottom:16px; }
+
+/* ── File drop ── */
+.file-drop {
+  border:1.5px dashed rgba(255,255,255,0.11); border-radius:var(--radius);
+  padding:64px 40px; text-align:center; cursor:pointer;
+  background:var(--surface); transition:border-color .2s, background .2s; margin-bottom:16px;
+}
+.file-drop:hover,.file-drop.dragover { border-color:var(--gold-dim); background:#191915; }
+.file-drop-icon { width:58px; height:58px; border-radius:50%; background:#2a2820; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; font-size:1.4rem; }
+.file-drop h3 { font-family:'Playfair Display',serif; font-size:1.15rem; font-weight:700; color:var(--cream); margin-bottom:6px; }
+.file-drop p { font-size:0.85rem; color:var(--muted); }
+
+/* ── File loaded ── */
+.file-loaded { display:none; align-items:center; gap:14px; background:var(--green-bg); border:1px solid rgba(61,122,80,0.35); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:40px; }
+.file-loaded.visible { display:flex; }
+.file-loaded-check { width:26px; height:26px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:0.75rem; color:white; }
+.file-loaded-name { font-weight:600; font-size:0.9rem; color:var(--green-txt); }
+.file-loaded-sub { font-size:0.78rem; color:rgba(93,186,125,0.55); margin-top:2px; }
+.file-loaded-clear { margin-left:auto; background:none; border:none; color:var(--muted); cursor:pointer; font-size:1rem; padding:4px; transition:color .15s; }
+.file-loaded-clear:hover { color:var(--cream); }
+
+/* ── Signers ── */
+.signers-section { margin-bottom:40px; }
+.signer-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px; margin-bottom:10px; transition:border-color .15s; }
+.signer-card:hover { border-color:rgba(255,255,255,0.14); }
+.signer-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.signer-num { font-size:0.65rem; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:var(--gold-dim); }
+.rm-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:0.78rem; font-weight:500; font-family:inherit; padding:4px 10px; border-radius:4px; transition:all .15s; }
+.rm-btn:hover { color:#e57363; background:var(--red-bg); }
+.signer-fields { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+@media(max-width:620px) { .signer-fields { grid-template-columns:1fr; } }
+.signer-custom-role { display:none; margin-top:12px; }
+.signer-custom-role.visible { display:block; }
+
+.add-signer-btn {
+  display:inline-flex; align-items:center; gap:8px; background:none;
+  border:1px dashed rgba(201,168,76,0.28); border-radius:var(--radius-sm);
+  color:var(--gold-dim); font-size:0.78rem; font-weight:500; font-family:inherit;
+  padding:10px 18px; cursor:pointer; transition:all .15s; margin-top:4px;
+}
+.add-signer-btn:hover { border-color:var(--gold); color:var(--gold); background:rgba(201,168,76,0.04); }
+
+/* ── Fields ── */
+.field label { display:block; font-size:0.63rem; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+input[type=text], input[type=email] {
+  width:100%; padding:10px 14px; background:var(--surface2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); font-size:0.88rem; font-family:inherit; color:var(--cream); transition:border-color .15s, box-shadow .15s;
+}
+input::placeholder { color:var(--muted); }
+input:focus { outline:none; border-color:rgba(201,168,76,0.45); box-shadow:0 0 0 3px rgba(201,168,76,0.07); }
+select {
+  width:100%; padding:10px 14px; background:var(--surface2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); font-size:0.88rem; font-family:inherit; color:var(--cream); cursor:pointer; transition:border-color .15s;
+}
+select:focus { outline:none; border-color:rgba(201,168,76,0.45); }
+select option { background:#1c1c19; color:var(--cream); }
+
+/* ── Buttons ── */
+.btn { display:inline-flex; align-items:center; gap:8px; padding:13px 28px; border-radius:var(--radius-sm); font-size:0.78rem; font-weight:600; font-family:inherit; letter-spacing:0.1em; text-transform:uppercase; cursor:pointer; border:none; transition:all .15s; text-decoration:none; }
+.btn-primary { background:var(--gold); color:#0c0c0a; }
+.btn-primary:hover { background:#d4b05a; }
+.btn-primary:disabled { opacity:.4; cursor:not-allowed; }
+.btn-secondary { background:var(--surface2); color:var(--muted2); border:1px solid var(--border); }
+.btn-secondary:hover { border-color:rgba(255,255,255,0.18); color:var(--cream); }
+.btn-sm { padding:8px 16px; font-size:0.72rem; }
+
+/* ── Links card ── */
+.links-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px; margin-top:24px; }
+.links-card-title { font-family:'Playfair Display',serif; font-size:1.05rem; font-weight:700; color:var(--cream); margin-bottom:4px; }
+.links-card-sub { font-size:0.8rem; color:var(--muted); margin-bottom:20px; }
+.link-row { margin-bottom:14px; }
+.link-row-label { font-size:0.82rem; font-weight:500; color:var(--cream); margin-bottom:6px; }
+.link-row-label span { color:var(--muted); font-size:0.78rem; }
+.link-input-wrap { display:flex; gap:8px; align-items:center; }
+.link-input-wrap input { font-size:0.75rem; padding:8px 12px; color:var(--muted2); }
+
+/* ── Doc grid ── */
+.doc-grid { display:flex; flex-direction:column; gap:10px; }
+.doc-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:18px 22px; display:flex; align-items:center; gap:16px; transition:border-color .15s; }
+.doc-card:hover { border-color:rgba(255,255,255,0.14); }
+.doc-icon { width:40px; height:40px; background:var(--surface2); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; }
+.doc-info { flex:1; min-width:0; }
+.doc-name { font-weight:600; font-size:0.88rem; color:var(--cream); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.doc-meta { font-size:0.75rem; color:var(--muted); margin-top:3px; }
+.doc-actions { display:flex; gap:8px; flex-shrink:0; }
+.signer-pills { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.pill { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:100px; font-size:0.7rem; font-weight:500; }
+.pill.pending  { background:rgba(201,124,18,0.1); color:var(--amber); }
+.pill.approved { background:rgba(61,122,80,0.18); color:var(--green-txt); }
+.pill.rejected { background:rgba(192,57,43,0.12); color:#e57363; }
+
+/* ── Empty state ── */
+.empty-state { text-align:center; padding:72px 20px; color:var(--muted); }
+.empty-state .ei { font-size:2.4rem; margin-bottom:14px; opacity:0.35; }
+.empty-state h3 { font-family:'Playfair Display',serif; color:var(--muted2); font-size:1.1rem; margin-bottom:8px; }
+.empty-state p { font-size:0.85rem; }
+
+/* ── Docs header ── */
+.docs-header { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:28px; }
+.docs-header h2 { font-family:'Playfair Display',serif; font-size:1.6rem; font-weight:700; color:var(--cream); }
+.docs-header p { font-size:0.8rem; color:var(--muted); margin-top:4px; }
+
+/* ── Approve page ── */
+#approvePage { display:none; }
+.approve-wrap { max-width:580px; margin:0 auto; padding:48px 32px 80px; }
+.doc-preview-link { display:inline-flex; align-items:center; gap:6px; color:var(--gold-dim); font-size:0.78rem; text-decoration:none; letter-spacing:0.06em; margin-bottom:24px; transition:color .15s; }
+.doc-preview-link:hover { color:var(--gold); }
+.approve-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:32px; }
+.approve-card-title { font-family:'Playfair Display',serif; font-size:1.5rem; font-weight:700; color:var(--cream); margin-bottom:6px; }
+.approve-card-sub { font-size:0.85rem; color:var(--muted2); margin-bottom:20px; line-height:1.6; }
+.signing-as-banner { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px; font-size:0.85rem; color:var(--muted2); margin-bottom:24px; }
+.signing-as-banner strong { color:var(--cream); }
+
+/* ── Sig tabs / canvas ── */
+.sig-tabs { display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; margin-bottom:16px; }
+.sig-tab { flex:1; padding:10px; text-align:center; cursor:pointer; font-size:0.72rem; font-weight:500; font-family:inherit; letter-spacing:0.1em; text-transform:uppercase; background:none; color:var(--muted); border:none; transition:all .15s; }
+.sig-tab.active { background:var(--gold); color:#0c0c0a; }
+canvas#sigCanvas { width:100%; height:140px; border:1px solid var(--border); border-radius:var(--radius-sm); cursor:crosshair; background:var(--surface2); touch-action:none; display:block; }
+.sig-actions { display:flex; gap:8px; margin-top:10px; }
+#typedSig { font-size:1.2rem; font-style:italic; }
+.legal-note { font-size:0.7rem; color:var(--muted); margin-top:10px; line-height:1.6; }
+
+/* ── Modal ── */
+#modalOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:1000; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(6px); }
+.modal-inner { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); max-width:680px; width:100%; max-height:80vh; overflow-y:auto; box-shadow:0 40px 80px rgba(0,0,0,0.6); }
+.modal-table { width:100%; border-collapse:collapse; }
+.modal-table th { text-align:left; font-size:0.62rem; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); padding-bottom:10px; border-bottom:1px solid var(--border); }
+.modal-table td { padding:12px 0; font-size:0.85rem; color:var(--muted2); border-bottom:1px solid var(--border-d); }
+.modal-table td:first-child { color:var(--cream); font-weight:500; }
+
+/* ── Toast ── */
+#toast { position:fixed; bottom:28px; right:28px; z-index:9999; background:var(--surface2); border:1px solid var(--border); color:var(--cream); padding:12px 20px; border-radius:var(--radius-sm); font-size:0.84rem; font-weight:500; transform:translateY(80px); opacity:0; transition:all .3s; max-width:320px; pointer-events:none; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+#toast.show { transform:translateY(0); opacity:1; }
+#toast.success { background:var(--green-bg); border-color:rgba(61,122,80,0.4); color:var(--green-txt); }
+#toast.error   { background:var(--red-bg); border-color:rgba(192,57,43,0.3); color:#e57363; }
+
+/* ── Spinner ── */
+.spinner { width:15px; height:15px; border:2px solid rgba(12,12,10,0.25); border-top-color:#0c0c0a; border-radius:50%; animation:spin .6s linear infinite; display:inline-block; }
+.spinner-light { border-color:rgba(255,255,255,0.12); border-top-color:var(--muted2); }
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Sign<em>Flow</em></div>
+  <div class="header-badge">Document Approval</div>
+</header>
+
+<div id="mainApp">
+  <div class="hero">
+    <div class="hero-eyebrow">No accounts. No fees.</div>
+    <h1>Collect signatures,<em>effortlessly</em></h1>
+    <p class="hero-sub">Upload your PDF, add team members, and share their unique approval links — all in one place.</p>
+  </div>
+
+  <div class="main-wrap">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('send',event)">Send</button>
+      <button class="tab" onclick="switchTab('docs',event)">Documents</button>
+    </div>
+
+    <!-- SEND TAB -->
+    <div class="tab-panel active" id="tab-send">
+      <div class="file-drop" id="fileDrop" onclick="document.getElementById('pdfInput').click()">
+        <div class="file-drop-icon">📄</div>
+        <h3>Drop your PDF here</h3>
+        <p>or click to browse</p>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf" style="display:none" onchange="handleFileSelect(this)">
+
+      <div class="file-loaded" id="fileLoaded">
+        <div class="file-loaded-check">✓</div>
+        <div>
+          <div class="file-loaded-name" id="fileLoadedName"></div>
+          <div class="file-loaded-sub">PDF loaded &amp; ready</div>
+        </div>
+        <button class="file-loaded-clear" onclick="clearFile()">✕</button>
+      </div>
+
+      <div class="signers-section">
+        <div class="section-label">Who needs to approve?</div>
+        <div id="signersList"></div>
+        <button class="add-signer-btn" onclick="addSigner()">＋ Add another signer</button>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+        <button class="btn btn-primary" id="sendBtn" onclick="sendDocument()">Send for Signature</button>
+        <span id="sendStatus" style="font-size:0.8rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- DOCS TAB -->
+    <div class="tab-panel" id="tab-docs">
+      <div class="docs-header">
+        <div>
+          <h2>Documents</h2>
+          <p>All sent documents and their signing status.</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadDocuments()">⟳ Refresh</button>
+      </div>
+      <div class="doc-grid" id="docGrid">
+        <div class="empty-state"><div class="ei">📂</div><h3>No documents yet</h3><p>Send your first document to get started.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APPROVE PAGE -->
+<div id="approvePage">
+  <div class="approve-wrap">
+    <div id="approveContent"></div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div class="modal-inner" id="modalInner"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Aston Martin Roles ────────────────────────────────────
+var ROLES = [
+  '— Select role —',
+  'Fleet Manager',
+  'Fleet Operations Director',
+  'Operations Manager',
+  'Logistics Coordinator',
+  'Finance Director',
+  'Head of Procurement',
+  'Legal Counsel',
+  'Authorised Signatory',
+  'Managing Director',
+  'Chief Executive Officer',
+  'Regional Director',
+  'Sales Director',
+  'Dealer Principal',
+  'Account Manager',
+  'Customer / Purchaser',
+  'Witness',
+  'Other…'
+];
+
+function buildRoleOptions() {
+  var html = '';
+  for (var i = 0; i < ROLES.length; i++) {
+    var val = (i === 0) ? '' : (i === ROLES.length - 1) ? '__other__' : ROLES[i];
+    html += '<option value="' + val + '">' + ROLES[i] + '</option>';
+  }
+  return html;
+}
+
+// ── Signer Management ─────────────────────────────────────
+var signerCount = 0;
+
+function addSigner() {
+  var idx  = signerCount++;
+  var list = document.getElementById('signersList');
+  var div  = document.createElement('div');
+  div.id   = 'sw-' + idx;
+  div.innerHTML =
+    '<div class="signer-card" id="sc-' + idx + '">' +
+      '<div class="signer-card-header">' +
+        '<span class="signer-num">Signer ' + (idx + 1) + '</span>' +
+        '<button class="rm-btn" onclick="removeSigner(' + idx + ')">Remove</button>' +
+      '</div>' +
+      '<div class="signer-fields">' +
+        '<div class="field"><label>Full Name</label><input type="text" id="sn-' + idx + '" placeholder="e.g. James Fletcher"></div>' +
+        '<div class="field"><label>Email (optional)</label><input type="email" id="se-' + idx + '" placeholder="email@example.com"></div>' +
+        '<div class="field"><label>Role</label><select id="sr-' + idx + '" onchange="onRoleChange(' + idx + ')">' + buildRoleOptions() + '</select></div>' +
+      '</div>' +
+      '<div class="signer-custom-role" id="src-' + idx + '">' +
+        '<div class="field" style="margin-top:10px"><label>Custom Role</label><input type="text" id="src-input-' + idx + '" placeholder="Enter role or title…"></div>' +
+      '</div>' +
+    '</div>';
+  list.appendChild(div);
+}
+
+function onRoleChange(idx) {
+  var sel  = document.getElementById('sr-' + idx);
+  var wrap = document.getElementById('src-' + idx);
+  if (!sel || !wrap) return;
+  if (sel.value === '__other__') {
+    wrap.classList.add('visible');
+    var inp = document.getElementById('src-input-' + idx);
+    if (inp) inp.focus();
+  } else {
+    wrap.classList.remove('visible');
+  }
+}
+
+function getRole(idx) {
+  var sel = document.getElementById('sr-' + idx);
+  if (!sel) return '';
+  if (sel.value === '__other__') {
+    var inp = document.getElementById('src-input-' + idx);
+    return (inp && inp.value.trim()) ? inp.value.trim() : 'Other';
+  }
+  return sel.value;
+}
+
+function removeSigner(idx) {
+  var el = document.getElementById('sw-' + idx);
+  if (el && document.querySelectorAll('.signer-card').length > 1) el.remove();
+  else showToast('At least one signer required', 'error');
+}
+
+// ── Init ──────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
+  var p = window.location.pathname;
+  if (p.startsWith('/approve/')) {
+    document.getElementById('mainApp').style.display = 'none';
+    document.getElementById('approvePage').style.display = 'block';
+    loadApprovePage(p.replace('/approve/', ''));
+  } else {
+    addSigner();
+    loadDocuments();
+  }
+
+  // File drop wiring
+  var drop = document.getElementById('fileDrop');
+  drop.addEventListener('dragover', function(e) { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', function() { drop.classList.remove('dragover'); });
+  drop.addEventListener('drop', function(e) {
+    e.preventDefault(); drop.classList.remove('dragover');
+    var f = e.dataTransfer.files[0];
+    if (f && f.type === 'application/pdf') setFile(f);
+    else showToast('Please drop a PDF file', 'error');
+  });
+});
+
+// ── Tab switching ─────────────────────────────────────────
+function switchTab(name, e) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  if (e && e.target) e.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'docs') loadDocuments();
+}
+
+// ── File handling ─────────────────────────────────────────
+var selectedFile = null;
+function handleFileSelect(input) { if (input.files[0]) setFile(input.files[0]); }
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('fileLoadedName').textContent = f.name;
+  document.getElementById('fileLoaded').classList.add('visible');
+  var drop = document.getElementById('fileDrop');
+  drop.style.opacity = '0.4';
+  drop.style.pointerEvents = 'none';
+}
+function clearFile() {
+  selectedFile = null;
+  document.getElementById('fileLoaded').classList.remove('visible');
+  document.getElementById('pdfInput').value = '';
+  var drop = document.getElementById('fileDrop');
+  drop.style.opacity = '';
+  drop.style.pointerEvents = '';
+}
+
+// ── Send document ─────────────────────────────────────────
+function sendDocument() {
+  if (!selectedFile) { showToast('Please select a PDF file', 'error'); return; }
+
+  var cards = document.querySelectorAll('.signer-card');
+  var signers = [];
+  var valid = true;
+
+  cards.forEach(function(card, rowIdx) {
+    var id  = card.id.replace('sc-', '');
+    var nameEl = document.getElementById('sn-' + id);
+    var name   = nameEl ? nameEl.value.trim() : '';
+    if (!name) { valid = false; return; }
+    var emailEl = document.getElementById('se-' + id);
+    signers.push({
+      name:     name,
+      email:    emailEl ? emailEl.value.trim() : '',
+      role:     getRole(id),
+      rowIndex: rowIdx
+    });
+  });
+
+  if (!valid || signers.length === 0) { showToast('All signers need a name', 'error'); return; }
+
+  var btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading…';
+
+  var fd = new FormData();
+  fd.append('pdf', selectedFile);
+  fd.append('signers', JSON.stringify(signers));
+
+  fetch('/api/documents', { method: 'POST', body: fd })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      if (!res.ok) throw new Error(res.data.error);
+      btn.innerHTML = '✓ Sent';
+      btn.style.background = 'var(--green)';
+      btn.style.color = 'white';
+      showSigningLinks(res.data);
+      showToast('Document sent!', 'success');
+      loadDocuments();
+      setTimeout(function() { btn.disabled = false; btn.innerHTML = 'Send for Signature'; btn.style.background = ''; btn.style.color = ''; }, 3000);
+    })
+    .catch(function(err) {
+      showToast(err.message || 'Upload failed', 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Send for Signature';
+    });
+}
+
+function showSigningLinks(data) {
+  var old = document.getElementById('linksCard');
+  if (old) old.remove();
+  var html = '';
+  data.signers.forEach(function(s) {
+    html += '<div class="link-row">' +
+      '<div class="link-row-label">' + s.name + (s.role ? ' <span>· ' + s.role + '</span>' : '') + '</div>' +
+      '<div class="link-input-wrap">' +
+        '<input value="' + s.approvalLink + '" readonly>' +
+        '<button class="btn btn-secondary btn-sm" onclick="copyLink(\'' + s.approvalLink + '\')">Copy</button>' +
+      '</div></div>';
+  });
+  var c = document.createElement('div');
+  c.id = 'linksCard';
+  c.innerHTML = '<div class="links-card"><div class="links-card-title">✓ Signing Links Created</div><div class="links-card-sub">Share these links with each signer. No account needed.</div>' + html + '</div>';
+  document.getElementById('tab-send').appendChild(c);
+}
+
+function copyLink(link) {
+  navigator.clipboard.writeText(link).then(function() { showToast('Link copied!', 'success'); });
+}
+
+// ── Documents list ────────────────────────────────────────
+function loadDocuments() {
+  var grid = document.getElementById('docGrid');
+  grid.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)"><span class="spinner spinner-light"></span></div>';
+  fetch('/api/documents')
+    .then(function(r) { return r.json(); })
+    .then(function(docs) {
+      if (!docs.length) { grid.innerHTML = '<div class="empty-state"><div class="ei">📂</div><h3>No documents yet</h3><p>Send your first document to get started.</p></div>'; return; }
+      grid.innerHTML = '';
+      docs.forEach(function(doc) {
+        var total    = doc.signers.length;
+        var approved = doc.signers.filter(function(s) { return s.status === 'approved'; }).length;
+        var pills    = doc.signers.map(function(s) {
+          return '<span class="pill ' + s.status + '">' + (s.status === 'approved' ? '✓' : '○') + ' ' + s.name + (s.role ? ' · ' + s.role : '') + '</span>';
+        }).join('');
+        var card = document.createElement('div');
+        card.className = 'doc-card';
+        card.innerHTML =
+          '<div class="doc-icon">' + (approved === total ? '✅' : '📄') + '</div>' +
+          '<div class="doc-info">' +
+            '<div class="doc-name">' + doc.name + '</div>' +
+            '<div class="doc-meta">' + new Date(doc.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' · ' + approved + '/' + total + ' signed</div>' +
+            '<div class="signer-pills">' + pills + '</div>' +
+          '</div>' +
+          '<div class="doc-actions">' +
+            '<button class="btn btn-secondary btn-sm" onclick="viewDoc(\'' + doc.id + '\')">Details</button>' +
+            '<a class="btn btn-secondary btn-sm" href="/api/documents/' + doc.id + '/view" target="_blank">👁 View</a>' +
+            '<a class="btn btn-primary btn-sm" href="/api/documents/' + doc.id + '/download" download>⬇ PDF</a>' +
+          '</div>';
+        grid.appendChild(card);
+      });
+    })
+    .catch(function(err) { grid.innerHTML = '<div class="empty-state"><div class="ei">⚠️</div><h3>Error</h3><p>' + err.message + '</p></div>'; });
+}
+
+function viewDoc(id) {
+  fetch('/api/documents/' + id)
+    .then(function(r) { return r.json(); })
+    .then(function(doc) {
+      var approved = doc.signers.filter(function(s) { return s.status === 'approved'; }).length;
+      var rows = doc.signers.map(function(s) {
+        var date = s.signed_at ? new Date(s.signed_at + 'Z').toLocaleString() : '—';
+        return '<tr>' +
+          '<td style="padding:12px 0">' + s.name + '</td>' +
+          '<td style="padding:12px 0">' + (s.role || '—') + '</td>' +
+          '<td style="padding:12px 0"><span class="pill ' + s.status + '">' + s.status + '</span></td>' +
+          '<td style="padding:12px 0;font-size:0.75rem">' + date + '</td>' +
+          '<td style="padding:12px 0">' + (s.status === 'pending' ? '<button class="btn btn-secondary btn-sm" onclick="copyLink(\'' + window.location.origin + '/approve/' + s.token + '\');closeModal()">Copy Link</button>' : '') + '</td>' +
+        '</tr>';
+      }).join('');
+      showModal(
+        '<div style="padding:32px">' +
+          '<div style="font-size:0.62rem;font-weight:500;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:12px">Document Details</div>' +
+          '<h2 style="font-family:\'Playfair Display\',serif;font-size:1.35rem;color:var(--cream);margin-bottom:4px">' + doc.name + '</h2>' +
+          '<p style="color:var(--muted);font-size:0.8rem;margin-bottom:24px">Uploaded ' + new Date(doc.created_at).toLocaleString() + ' · ' + approved + '/' + doc.signers.length + ' signed</p>' +
+          '<table class="modal-table"><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Signed At</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+          '<div style="display:flex;gap:10px;margin-top:28px">' +
+            '<a class="btn btn-secondary" href="/api/documents/' + doc.id + '/view" target="_blank">👁 View PDF</a>' +
+            '<a class="btn btn-primary" href="/api/documents/' + doc.id + '/download" download>⬇ Download PDF</a>' +
+            '<button class="btn btn-secondary" onclick="closeModal()">Close</button>' +
+          '</div>' +
+        '</div>'
+      );
+    });
+}
+
+// ── Modal ─────────────────────────────────────────────────
+function showModal(html) { document.getElementById('modalInner').innerHTML = html; document.getElementById('modalOverlay').style.display = 'flex'; }
+function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+function handleOverlayClick(e) { if (e.target.id === 'modalOverlay') closeModal(); }
+
+// ── Toast ─────────────────────────────────────────────────
+var toastTimer;
+function showToast(msg, type) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (type || '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function() { el.className = ''; }, 3200);
+}
+
+// ── Approve page ──────────────────────────────────────────
+function loadApprovePage(token) {
+  var el = document.getElementById('approveContent');
+  fetch('/api/approve/' + token)
+    .then(function(r) {
+      if (r.status === 409) {
+        el.innerHTML = '<div class="approve-card" style="text-align:center;padding:56px"><div style="font-size:3rem;margin-bottom:16px">✅</div><h2 style="font-family:\'Playfair Display\',serif;font-size:1.6rem;color:var(--cream);margin-bottom:10px">Already Signed</h2><p style="color:var(--muted)">You\'ve already signed this document.</p></div>';
+        throw new Error('done');
+      }
+      return r.json();
+    })
+    .then(function(payload) {
+      renderApproveForm(token, payload.signer, payload.document, el);
+    })
+    .catch(function(err) {
+      if (err.message !== 'done')
+        el.innerHTML = '<div class="approve-card" style="text-align:center;padding:56px"><div style="font-size:2.5rem;opacity:.4">⚠️</div><p style="color:#e57363;margin-top:14px">' + err.message + '</p></div>';
+    });
+}
+
+function renderApproveForm(token, signer, doc, el) {
+  el.innerHTML =
+    '<a class="doc-preview-link" href="/uploads/' + doc.file_path + '" target="_blank">📄 Preview document →</a>' +
+    '<div class="approve-card">' +
+      '<div style="font-size:0.62rem;font-weight:500;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:12px">Signature Request</div>' +
+      '<div class="approve-card-title">' + doc.name + '</div>' +
+      '<div class="approve-card-sub">You\'ve been asked to sign this document as <strong style="color:var(--cream)">' + (signer.role || 'Signatory') + '</strong>.</div>' +
+      '<div class="signing-as-banner">Signing as: <strong>' + signer.name + '</strong>' + (signer.role ? ' · ' + signer.role : '') + '</div>' +
+      '<div class="field" style="margin-bottom:16px">' +
+        '<label>Your Signature</label>' +
+        '<div class="sig-tabs"><button class="sig-tab active" onclick="switchSigMode(\'draw\',this)">✍ Draw</button><button class="sig-tab" onclick="switchSigMode(\'type\',this)">⌨ Type</button></div>' +
+        '<div id="drawMode"><canvas id="sigCanvas"></canvas><div class="sig-actions"><button class="btn btn-secondary btn-sm" onclick="clearCanvas()">Clear</button><span style="font-size:0.75rem;color:var(--muted);margin-left:4px">Draw above</span></div></div>' +
+        '<div id="typeMode" style="display:none"><input type="text" id="typedSig" placeholder="Type your full name"><p style="font-size:0.75rem;color:var(--muted);margin-top:6px">Typed signatures are legally equivalent to handwritten.</p></div>' +
+      '</div>' +
+      '<button class="btn btn-primary" id="signBtn" onclick="submitSignature(\'' + token + '\')">Sign Document</button>' +
+      '<p class="legal-note">By clicking "Sign Document" you agree your signature is legally binding.</p>' +
+    '</div>';
+  initCanvas();
+}
+
+// ── Canvas ────────────────────────────────────────────────
+var canvas, ctx, drawing = false;
+function initCanvas() {
+  canvas = document.getElementById('sigCanvas');
+  if (!canvas) return;
+  ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width  = (rect.width  || 500) * dpr;
+  canvas.height = 140 * dpr;
+  ctx.scale(dpr, dpr);
+  canvas.style.background = '#ffffff';
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  function pos(e) { var r = canvas.getBoundingClientRect(), s = e.touches ? e.touches[0] : e; return { x: s.clientX - r.left, y: s.clientY - r.top }; }
+  canvas.onmousedown  = function(e) { drawing = true; var p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  canvas.onmousemove  = function(e) { if (!drawing) return; var p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+  canvas.onmouseup    = function() { drawing = false; };
+  canvas.onmouseleave = function() { drawing = false; };
+  canvas.addEventListener('touchstart', function(e) { e.preventDefault(); drawing = true; var p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, {passive:false});
+  canvas.addEventListener('touchmove',  function(e) { e.preventDefault(); if (!drawing) return; var p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, {passive:false});
+  canvas.addEventListener('touchend',   function() { drawing = false; }, {passive:false});
+}
+function getSignatureDataURL() {
+  // Create an off-screen canvas with white background + dark ink
+  var offscreen = document.createElement('canvas');
+  offscreen.width  = canvas.width;
+  offscreen.height = canvas.height;
+  var octx = offscreen.getContext('2d');
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, offscreen.width, offscreen.height);
+  octx.drawImage(canvas, 0, 0);
+  return offscreen.toDataURL('image/png');
+}
+var sigMode = 'draw';
+function switchSigMode(mode, btn) {
+  sigMode = mode;
+  document.querySelectorAll('.sig-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('drawMode').style.display = mode === 'draw' ? '' : 'none';
+  document.getElementById('typeMode').style.display = mode === 'type' ? '' : 'none';
+  if (mode === 'draw') initCanvas();
+}
+function isBlank() {
+  if (!canvas) return true;
+  return !ctx.getImageData(0, 0, canvas.width, canvas.height).data.some(function(v) { return v !== 0; });
+}
+function submitSignature(token) {
+  var sig, img = null;
+  if (sigMode === 'draw') {
+    if (isBlank()) { showToast('Please draw your signature', 'error'); return; }
+    sig = '[drawn]'; img = getSignatureDataURL();
+  } else {
+    var t = document.getElementById('typedSig');
+    sig = t ? t.value.trim() : '';
+    if (!sig) { showToast('Please type your name', 'error'); return; }
+  }
+  var btn = document.getElementById('signBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing…';
+  fetch('/api/approve/' + token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ signature: sig, signatureImage: img })
+  })
+  .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+  .then(function(res) {
+    if (!res.ok) {
+      if (res.data.error === 'already_signed') {
+        document.getElementById('approveContent').innerHTML =
+          '<div class="approve-card" style="text-align:center;padding:56px">' +
+            '<div style="font-size:3rem;margin-bottom:16px">✅</div>' +
+            '<h2 style="font-family:\'Playfair Display\',serif;font-size:1.6rem;color:var(--cream);margin-bottom:10px">Already Signed</h2>' +
+            '<p style="color:var(--muted)">You\'ve already signed this document. Thank you!</p>' +
+          '</div>';
+        return;
+      }
+      throw new Error(res.data.error);
+    }
+    document.getElementById('approveContent').innerHTML =
+      '<div class="approve-card" style="text-align:center;padding:64px">' +
+        '<div style="font-size:3.5rem;margin-bottom:20px">✅</div>' +
+        '<div style="font-size:0.62rem;font-weight:500;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:14px">Confirmed</div>' +
+        '<h2 style="font-family:\'Playfair Display\',serif;font-size:1.8rem;color:var(--cream);margin-bottom:12px">Signed Successfully</h2>' +
+        '<p style="color:var(--muted);max-width:340px;margin:0 auto;line-height:1.65">Your signature has been recorded. You may close this page.</p>' +
+      '</div>';
+  })
+  .catch(function(err) {
+    showToast(err.message || 'Signing failed', 'error');
+    btn.disabled = false; btn.innerHTML = 'Sign Document';
+  });
+}
+</script>
+</body>
+</html>
