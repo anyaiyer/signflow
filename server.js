@@ -10,12 +10,13 @@ const PORT     = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 // ── Directories ───────────────────────────────────────────────────────────────
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+const DATA_DIR    = process.env.DATA_DIR || __dirname;
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── Database ──────────────────────────────────────────────────────────────────
 const initSqlJs = require('sql.js');
-const DB_PATH   = path.join(__dirname, 'signflow.db');
+const DB_PATH   = path.join(DATA_DIR, 'signflow.db');
 let db;
 
 async function initDB() {
@@ -23,7 +24,6 @@ async function initDB() {
   db = fs.existsSync(DB_PATH)
     ? new SQL.Database(fs.readFileSync(DB_PATH))
     : new SQL.Database();
-
   db.run(`
     CREATE TABLE IF NOT EXISTS documents (
       id            TEXT PRIMARY KEY,
@@ -50,14 +50,10 @@ async function initDB() {
 }
 
 function saveDB() { fs.writeFileSync(DB_PATH, Buffer.from(db.export())); }
-
 function dbAll(sql, p = []) {
   try {
-    const s = db.prepare(sql);
-    s.bind(p);
-    const rows = [];
-    while (s.step()) rows.push(s.getAsObject());
-    s.free();
+    const s = db.prepare(sql); s.bind(p);
+    const rows = []; while (s.step()) rows.push(s.getAsObject()); s.free();
     return rows;
   } catch { return []; }
 }
@@ -70,7 +66,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// ── Multer ────────────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
   filename: (req, file, cb) => cb(null, `${uuidv4()}-${file.originalname}`)
@@ -80,93 +75,245 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, file.mimetype === 'application/pdf')
 });
 
-// ── PDF Signature Page ────────────────────────────────────────────────────────
-const SIG_W  = 595;
-const SIG_H  = 842;
-const MARGIN = 60;
+// ── PDF Text Extraction (pdfjs-dist) ──────────────────────────────────────────
+// Returns array of { str, x, y, pageIndex, pageHeight }
+async function extractTextItems(pdfPath) {
+  // pdfjs-dist requires a canvas shim in Node — use legacy build
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+
+  const data     = new Uint8Array(fs.readFileSync(pdfPath));
+  const pdfDoc   = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+  const allItems = [];
+
+  for (let p = 1; p <= pdfDoc.numPages; p++) {
+    const page    = await pdfDoc.getPage(p);
+    const vp      = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    for (const item of content.items) {
+      if (!item.str || !item.str.trim()) continue;
+      allItems.push({
+        str:        item.str.trim(),
+        x:          item.transform[4],
+        y:          item.transform[5],
+        pageIndex:  p - 1,           // 0-based
+        pageHeight: vp.height,
+      });
+    }
+  }
+  return allItems;
+}
+
+// ── Role → Signature Position Finder ─────────────────────────────────────────
+// Strategies (tried in order):
+//   1. Find "Signed:" text on the same line as the role → stamp just after it
+//   2. Find the role text itself → stamp to the right on the same line
+//   3. Fall back to bottom-of-last-page stamping
+function normalise(str) {
+  return str.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function findSigPosition(items, role) {
+  if (!role) return null;
+  const normRole = normalise(role);
+
+  // Build role keywords (skip short words)
+  const keywords = normRole.split(' ').filter(w => w.length > 3);
+  if (keywords.length === 0) return null;
+
+  // Score each text item by keyword overlap with role
+  function roleScore(str) {
+    const n = normalise(str);
+    return keywords.filter(k => n.includes(k)).length / keywords.length;
+  }
+
+  // Find best role match (score >= 0.5)
+  const candidates = items
+    .map(item => ({ ...item, score: roleScore(item.str) }))
+    .filter(item => item.score >= 0.5)
+    .sort((a, b) => b.score - a.score);
+
+  if (candidates.length === 0) return null;
+  const roleItem = candidates[0];
+
+  // ── Strategy 1: find "Signed:" on the same line (within 6pt vertically) ──
+  const YTOL = 8; // points tolerance for "same line"
+  const signedItem = items.find(item => {
+    if (item.pageIndex !== roleItem.pageIndex) return false;
+    const normStr = normalise(item.str);
+    return (normStr === 'signed' || normStr === 'signed:' || normStr.startsWith('signed')) &&
+           Math.abs(item.y - roleItem.y) < YTOL;
+  });
+
+  if (signedItem) {
+    return {
+      pageIndex:  signedItem.pageIndex,
+      pageHeight: signedItem.pageHeight,
+      x:          signedItem.x + 46,
+      y:          signedItem.y - 4,
+      boxH:       12,
+      boxW:       75,
+    };
+  }
+
+  // ── Strategy 2: place to the right of the role text itself ──
+  const sameLineItems = items.filter(i =>
+    i.pageIndex === roleItem.pageIndex && Math.abs(i.y - roleItem.y) < YTOL
+  ).sort((a, b) => a.x - b.x);
+
+  const rightmostX = Math.max(...sameLineItems.map(i => i.x));
+  const pageW = 595;
+
+  return {
+    pageIndex:  roleItem.pageIndex,
+    pageHeight: roleItem.pageHeight,
+    x:          Math.min(rightmostX + 20, pageW * 0.55),
+    y:          roleItem.y + 1,
+    boxH:       12,
+    boxW:       90,
+  };
+}
+
+// ── PDF Stamping ──────────────────────────────────────────────────────────────
 const LINE_COLOR = rgb(0.4, 0.4, 0.4);
 const BLACK      = rgb(0, 0, 0);
 const GRAY       = rgb(0.5, 0.5, 0.5);
-
-function getSlot(rowIndex, total) {
-  const usable  = SIG_H - 180;
-  const spacing = Math.min(100, Math.floor(usable / Math.max(total, 1)));
-  const blockTop = SIG_H - 120 - rowIndex * spacing;
-  return {
-    nameY:  blockTop,           // name label above line
-    lineY:  blockTop - 18,      // the signature line itself
-    sigY:   blockTop - 16,      // where drawn/typed sig sits (on the line)
-    roleY:  blockTop - 34,      // role label below line
-    dateY:  blockTop - 34,      // date (right-aligned, same row as role)
-  };
-}
 
 async function stampPDF(docId) {
   const doc     = dbGet('SELECT * FROM documents WHERE id = ?', [docId]);
   const signers = dbAll('SELECT * FROM signers WHERE document_id = ? ORDER BY row_index', [docId]);
   if (!doc) return;
 
-  const pdfDoc     = await PDFDocument.load(fs.readFileSync(path.join(UPLOADS_DIR, doc.original_path)));
-  const regular    = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bold       = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const italic     = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-  const sigPage    = pdfDoc.addPage([SIG_W, SIG_H]);
-  const lineW      = SIG_W - MARGIN * 2;
+  const origPath = path.join(UPLOADS_DIR, doc.original_path);
+  const outPath  = path.join(UPLOADS_DIR, doc.file_path);
 
-  sigPage.drawText('SIGNATURE PAGE', { x: MARGIN, y: SIG_H - 60, size: 16, font: bold, color: BLACK });
-  sigPage.drawText(doc.name,         { x: MARGIN, y: SIG_H - 80, size: 10, font: regular, color: GRAY });
-  sigPage.drawLine({ start: { x: MARGIN, y: SIG_H - 90 }, end: { x: SIG_W - MARGIN, y: SIG_H - 90 }, thickness: 0.5, color: LINE_COLOR });
+  // ── Extract text positions from original PDF ──────────────────────────────
+  let textItems = [];
+  try {
+    textItems = await extractTextItems(origPath);
+  } catch (e) {
+    console.warn('Text extraction failed, falling back to bottom-of-page:', e.message);
+  }
 
+  // ── Load PDF with pdf-lib for writing ─────────────────────────────────────
+  const pdfDoc  = await PDFDocument.load(fs.readFileSync(origPath));
+  const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const bold    = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const italic  = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  const pages   = pdfDoc.getPages();
+
+  // Track which signers were placed inline vs need fallback
+  const placed = new Set();
+
+  // ── Try to place each approved signer inline ──────────────────────────────
   for (const s of signers) {
-    const slot = getSlot(s.row_index, signers.length);
+    if (s.status !== 'approved') continue;
 
-    // Signature line
-    sigPage.drawLine({ start: { x: MARGIN, y: slot.lineY }, end: { x: MARGIN + lineW, y: slot.lineY }, thickness: 0.75, color: LINE_COLOR });
+    const pos = findSigPosition(textItems, s.role);
+    if (!pos) continue;
 
-    // Name above line
-    sigPage.drawText(s.name || 'Signatory', { x: MARGIN, y: slot.nameY, size: 9, font: regular, color: GRAY });
+    const page   = pages[pos.pageIndex];
+    const { width, height } = page.getSize();
 
-    // Role below line
-    if (s.role) sigPage.drawText(s.role, { x: MARGIN, y: slot.roleY, size: 8, font: regular, color: GRAY });
+    // pdfjs y is from bottom of page (same as pdf-lib), so we use directly
+    const sigX  = pos.x;
+    const boxH  = pos.boxH || 16;
+    const boxW  = pos.boxW || 80;
 
-    // Status badge (top right)
-    const statusText  = s.status === 'approved' ? '[Signed]' : '[Pending]';
-    const statusColor = s.status === 'approved' ? rgb(0.1, 0.6, 0.3) : rgb(0.7, 0.4, 0);
-    sigPage.drawText(statusText, { x: SIG_W - MARGIN - 60, y: slot.nameY, size: 8, font: bold, color: statusColor });
-
-    // Date bottom right
-    if (s.signed_at) {
-      const d = new Date(s.signed_at + 'Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-      sigPage.drawText(d, { x: SIG_W - MARGIN - 80, y: slot.dateY, size: 8, font: regular, color: GRAY });
+    // Draw signature
+    if (s.signature_image && s.signature_image.startsWith('data:image/png;base64,')) {
+      try {
+        const img   = await pdfDoc.embedPng(Buffer.from(s.signature_image.replace('data:image/png;base64,', ''), 'base64'));
+        const scale = boxH / img.height;
+        const imgW  = Math.min(boxW, img.width * scale);
+        // y is already offset down in findSigPosition for images
+        page.drawImage(img, { x: sigX, y: pos.y, width: imgW, height: boxH });
+      } catch (e) {
+        console.error('sig image embed error:', e.message);
+        _drawTypedSig(page, italic, s.name, sigX, pos.y + 10, 10);
+      }
+    } else if (s.signature && s.signature !== '[drawn]') {
+      // typed: lower y to centre in box
+      _drawTypedSig(page, italic, s.signature, sigX, pos.y - 2, 10);
+    } else {
+      _drawTypedSig(page, italic, s.name, sigX, pos.y - 2, 10);
     }
 
-    // Actual signature — drawn image or typed text, centred on the line
-    if (s.status === 'approved') {
-      if (s.signature_image && s.signature_image.startsWith('data:image/png;base64,')) {
-        try {
-          const img   = await pdfDoc.embedPng(Buffer.from(s.signature_image.replace('data:image/png;base64,', ''), 'base64'));
-          const maxH  = 32;
-          const scale = maxH / img.height;
-          const imgW  = Math.min(lineW * 0.45, img.width * scale);
-          const imgH  = maxH;
-          // centre horizontally on the line, sit on top of line
-          const imgX  = MARGIN + (lineW / 2) - (imgW / 2);
-          sigPage.drawImage(img, { x: imgX, y: slot.lineY + 2, width: imgW, height: imgH });
-        } catch (e) { console.error('img embed error', e.message); }
-      } else if (s.signature && s.signature !== '[drawn]') {
-        let fontSize = 20;
-        while (italic.widthOfTextAtSize(s.signature, fontSize) > lineW * 0.45 && fontSize > 8) fontSize -= 0.5;
-        const textW = italic.widthOfTextAtSize(s.signature, fontSize);
-        const textX = MARGIN + (lineW / 2) - (textW / 2);
-        sigPage.drawText(s.signature, { x: textX, y: slot.sigY, size: fontSize, font: italic, color: rgb(0.05, 0.15, 0.45) });
+    placed.add(s.id);
+  }
+
+  // ── Fallback: stamp any unplaced signers at bottom of last page ───────────
+  const unplaced = signers.filter(s => !placed.has(s.id));
+  if (unplaced.length > 0) {
+    const lastPage = pages[pages.length - 1];
+    const { width } = lastPage.getSize();
+    const margin = 48;
+    const lineW  = width - margin * 2;
+    const blockH = 80;
+
+    const startY = 20 + unplaced.length * blockH + 30;
+
+    lastPage.drawLine({
+      start: { x: margin, y: startY }, end: { x: width - margin, y: startY },
+      thickness: 0.5, color: LINE_COLOR,
+    });
+    lastPage.drawText('SIGNATURES', { x: margin, y: startY + 8, size: 7, font: bold, color: GRAY });
+
+    for (const s of unplaced) {
+      const idx    = unplaced.indexOf(s);
+      const blockY = startY - 18 - idx * blockH;
+
+      lastPage.drawText(s.name || 'Signatory', { x: margin, y: blockY, size: 9, font: bold, color: BLACK });
+      if (s.role) lastPage.drawText(s.role, { x: margin, y: blockY - 13, size: 7, font: regular, color: GRAY });
+
+      const statusText  = s.status === 'approved' ? '[Signed]' : '[Pending]';
+      const statusColor = s.status === 'approved' ? rgb(0.1, 0.6, 0.3) : rgb(0.7, 0.4, 0);
+      lastPage.drawText(statusText, {
+        x: width - margin - bold.widthOfTextAtSize(statusText, 8),
+        y: blockY, size: 8, font: bold, color: statusColor,
+      });
+      if (s.signed_at) {
+        const d = new Date(s.signed_at + 'Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        lastPage.drawText(d, {
+          x: width - margin - regular.widthOfTextAtSize(d, 7),
+          y: blockY - 13, size: 7, font: regular, color: GRAY,
+        });
+      }
+
+      const lineY = blockY - 30;
+      lastPage.drawLine({
+        start: { x: margin, y: lineY }, end: { x: margin + lineW * 0.55, y: lineY },
+        thickness: 0.5, color: LINE_COLOR,
+      });
+
+      if (s.status === 'approved') {
+        if (s.signature_image && s.signature_image.startsWith('data:image/png;base64,')) {
+          try {
+            const img   = await pdfDoc.embedPng(Buffer.from(s.signature_image.replace('data:image/png;base64,', ''), 'base64'));
+            const maxH  = 26, scale = maxH / img.height;
+            lastPage.drawImage(img, { x: margin + 4, y: lineY + 2, width: Math.min(lineW * 0.5, img.width * scale), height: maxH });
+          } catch (e) { console.error('fallback sig embed:', e.message); }
+        } else if (s.signature && s.signature !== '[drawn]') {
+          _drawTypedSig(lastPage, italic, s.signature, margin + 4, lineY + 3);
+        }
       }
     }
   }
 
+  // Footer on last page
+  const lastPage = pages[pages.length - 1];
   const now = new Date().toLocaleString('en-US', { timeZone: 'UTC' });
-  sigPage.drawText(`Generated by SignFlow · ${now} UTC`, { x: MARGIN, y: 30, size: 7, font: regular, color: rgb(0.7, 0.7, 0.7) });
+  lastPage.drawText(`SignFlow · ${now} UTC`, {
+    x: 48, y: 8, size: 6, font: regular, color: rgb(0.75, 0.75, 0.75),
+  });
 
-  fs.writeFileSync(path.join(UPLOADS_DIR, doc.file_path), await pdfDoc.save());
+  fs.writeFileSync(outPath, await pdfDoc.save());
+}
+
+function _drawTypedSig(page, font, text, x, y, maxSize = 10) {
+  let fontSize = maxSize;
+  while (font.widthOfTextAtSize(text, fontSize) > 78 && fontSize > 5) fontSize -= 0.5;
+  page.drawText(text, { x, y, size: fontSize, font, color: rgb(0.05, 0.15, 0.45) });
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -175,11 +322,9 @@ async function stampPDF(docId) {
 app.post('/api/documents', upload.single('pdf'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'PDF required' });
-
     let signers;
     try { signers = JSON.parse(req.body.signers); }
     catch { return res.status(400).json({ error: 'Invalid signers JSON' }); }
-
     if (!Array.isArray(signers) || signers.length === 0)
       return res.status(400).json({ error: 'At least one signer required' });
 
@@ -228,13 +373,13 @@ app.get('/api/documents/:id/download', async (req, res) => {
   res.download(fp, `signed-${doc.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
 });
 
-// GET /api/documents/:id/view — opens PDF inline in browser tab
+// GET /api/documents/:id/view
 app.get('/api/documents/:id/view', async (req, res) => {
   const doc = dbGet('SELECT * FROM documents WHERE id = ?', [req.params.id]);
-  if (!doc) return res.status(404).send('Document not found');
+  if (!doc) return res.status(404).send('Not found');
   await stampPDF(req.params.id);
   const fp = path.join(UPLOADS_DIR, doc.file_path);
-  if (!fs.existsSync(fp)) return res.status(404).send('File not found on disk');
+  if (!fs.existsSync(fp)) return res.status(404).send('File missing');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
   res.setHeader('Content-Length', fs.statSync(fp).size);
@@ -256,19 +401,16 @@ app.post('/api/approve/:token', async (req, res) => {
     const signer = dbGet('SELECT * FROM signers WHERE token = ?', [req.params.token]);
     if (!signer) return res.status(404).json({ error: 'Link not found' });
     if (signer.status === 'approved') return res.status(409).json({ error: 'already_signed' });
-
     const { signature, signatureImage } = req.body;
     if (!signature) return res.status(400).json({ error: 'Signature required' });
-
     dbRun(`UPDATE signers SET status='approved', signature=?, signature_image=?, signed_at=datetime('now') WHERE token=?`,
       [signature, signatureImage || null, req.params.token]);
-
     await stampPDF(signer.document_id);
     res.json({ success: true });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
-// SPA catch-all for /approve/:token routes
+// SPA catch-all
 app.get('/approve/:token', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 );
