@@ -105,29 +105,43 @@ async function extractTextItems(pdfPath) {
 }
 
 // ── Role → Signature Position Finder ─────────────────────────────────────────
-// Strategies (tried in order):
-//   1. Find "Signed:" text on the same line as the role → stamp just after it
-//   2. Find the role text itself → stamp to the right on the same line
-//   3. Fall back to bottom-of-last-page stamping
 function normalise(str) {
   return str.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const DATE_TRIGGERS = ['date', 'date:', 'dated', 'date signed', 'signing date'];
+
+function isDateTrigger(str) {
+  const n = normalise(str);
+  return DATE_TRIGGERS.some(t => n === t || n.startsWith(t));
+}
+
+const SIG_TRIGGERS = [
+  'signed', 'signed:', 'signature', 'signature:', 'sign here',
+  'authorised by', 'authorized by', 'sign off', 'sign below',
+  'signatory', 'print name', 'name:'
+];
+
+function isBlankArea(str) {
+  return /^[_\-\.]{3,}$/.test(str.trim());
+}
+
+function isSigTrigger(str) {
+  const n = normalise(str);
+  return SIG_TRIGGERS.some(t => n === t || n.startsWith(t));
 }
 
 function findSigPosition(items, role) {
   if (!role) return null;
   const normRole = normalise(role);
-
-  // Build role keywords (skip short words)
   const keywords = normRole.split(' ').filter(w => w.length > 3);
   if (keywords.length === 0) return null;
 
-  // Score each text item by keyword overlap with role
   function roleScore(str) {
     const n = normalise(str);
     return keywords.filter(k => n.includes(k)).length / keywords.length;
   }
 
-  // Find best role match (score >= 0.5)
   const candidates = items
     .map(item => ({ ...item, score: roleScore(item.str) }))
     .filter(item => item.score >= 0.5)
@@ -136,42 +150,109 @@ function findSigPosition(items, role) {
   if (candidates.length === 0) return null;
   const roleItem = candidates[0];
 
-  // ── Strategy 1: find "Signed:" on the same line (within 6pt vertically) ──
-  const YTOL = 8; // points tolerance for "same line"
-  const signedItem = items.find(item => {
-    if (item.pageIndex !== roleItem.pageIndex) return false;
-    const normStr = normalise(item.str);
-    return (normStr === 'signed' || normStr === 'signed:' || normStr.startsWith('signed')) &&
-           Math.abs(item.y - roleItem.y) < YTOL;
-  });
+  const YTOL = 8;
+  const YROW = 20;
 
-  if (signedItem) {
-    return {
-      pageIndex:  signedItem.pageIndex,
-      pageHeight: signedItem.pageHeight,
-      x:          signedItem.x + 46,
-      y:          signedItem.y - 6,   // half row height down to vertically centre
-      boxH:       12,
-      boxW:       75,
-    };
-  }
-
-  // ── Strategy 2: place to the right of the role text itself ──
-  const sameLineItems = items.filter(i =>
+  const sameLine = items.filter(i =>
     i.pageIndex === roleItem.pageIndex && Math.abs(i.y - roleItem.y) < YTOL
   ).sort((a, b) => a.x - b.x);
 
-  const rightmostX = Math.max(...sameLineItems.map(i => i.x));
-  const pageW = 595;
+  // Helper: find date field near a given y on the same page
+  // Looks on same line OR up to 2 rows below
+  function findDateNear(anchorY) {
+    const nearby = items.filter(i =>
+      i.pageIndex === roleItem.pageIndex &&
+      anchorY - i.y >= -YTOL &&
+      anchorY - i.y < YROW * 3
+    );
+    const dateTrigger = nearby.find(i => isDateTrigger(i.str));
+    if (!dateTrigger) return null;
+    // Place date just after the trigger label
+    return {
+      x: dateTrigger.x + regular_widthEstimate(dateTrigger.str) + 4,
+      y: dateTrigger.y,
+    };
+  }
 
-  return {
+  // Rough width estimate for offset (we don't have font access here)
+  function regular_widthEstimate(str) {
+    return str.length * 4.5; // ~4.5pt per char at 8pt Helvetica
+  }
+
+  // ── Strategy 1: sig trigger on same line ──────────────────────────────────
+  const triggerItem = sameLine.find(i => isSigTrigger(i.str));
+  if (triggerItem) {
+    const pos = {
+      pageIndex:  triggerItem.pageIndex,
+      pageHeight: triggerItem.pageHeight,
+      x:          triggerItem.x + 46,
+      y:          triggerItem.y - 6,
+      boxH: 12, boxW: 75,
+    };
+    pos.datePos = findDateNear(triggerItem.y);
+    return pos;
+  }
+
+  // ── Strategy 2: blank underscores on same line ────────────────────────────
+  const blankSameLine = sameLine.find(i => isBlankArea(i.str));
+  if (blankSameLine) {
+    const pos = {
+      pageIndex:  blankSameLine.pageIndex,
+      pageHeight: blankSameLine.pageHeight,
+      x:          blankSameLine.x + 2,
+      y:          blankSameLine.y + 2,
+      boxH: 12, boxW: 75,
+    };
+    pos.datePos = findDateNear(blankSameLine.y);
+    return pos;
+  }
+
+  // ── Strategy 3: sig trigger on line below ────────────────────────────────
+  const belowItems = items.filter(i =>
+    i.pageIndex === roleItem.pageIndex &&
+    i.y < roleItem.y &&
+    roleItem.y - i.y < YROW * 2
+  ).sort((a, b) => b.y - a.y);
+
+  const belowTrigger = belowItems.find(i => isSigTrigger(i.str));
+  if (belowTrigger) {
+    const pos = {
+      pageIndex:  belowTrigger.pageIndex,
+      pageHeight: belowTrigger.pageHeight,
+      x:          belowTrigger.x + 46,
+      y:          belowTrigger.y - 6,
+      boxH: 12, boxW: 75,
+    };
+    pos.datePos = findDateNear(belowTrigger.y);
+    return pos;
+  }
+
+  // ── Strategy 4: blank underscores below ──────────────────────────────────
+  const belowBlank = belowItems.find(i => isBlankArea(i.str));
+  if (belowBlank) {
+    const pos = {
+      pageIndex:  belowBlank.pageIndex,
+      pageHeight: belowBlank.pageHeight,
+      x:          belowBlank.x + 2,
+      y:          belowBlank.y + 2,
+      boxH: 12, boxW: 75,
+    };
+    pos.datePos = findDateNear(belowBlank.y);
+    return pos;
+  }
+
+  // ── Strategy 5: right of role text ───────────────────────────────────────
+  const rightmostX = Math.max(...sameLine.map(i => i.x));
+  const pageW = 595;
+  const pos = {
     pageIndex:  roleItem.pageIndex,
     pageHeight: roleItem.pageHeight,
     x:          Math.min(rightmostX + 20, pageW * 0.55),
-    y:          roleItem.y + 1,
-    boxH:       12,
-    boxW:       90,
+    y:          roleItem.y - 6,
+    boxH: 12, boxW: 75,
   };
+  pos.datePos = findDateNear(roleItem.y);
+  return pos;
 }
 
 // ── PDF Stamping ──────────────────────────────────────────────────────────────
@@ -235,6 +316,18 @@ async function stampPDF(docId) {
       _drawTypedSig(page, italic, s.signature, sigX, pos.y + 4, 10);
     } else {
       _drawTypedSig(page, italic, s.name, sigX, pos.y + 4, 10);
+    }
+
+    // Stamp date ONLY if a date field was detected in the PDF near the signature
+    if (s.signed_at && pos.datePos) {
+      const d = new Date(s.signed_at + 'Z').toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric'
+      });
+      page.drawText(d, {
+        x: pos.datePos.x,
+        y: pos.datePos.y,
+        size: 7, font: regular, color: rgb(0.4, 0.4, 0.4),
+      });
     }
 
     placed.add(s.id);
