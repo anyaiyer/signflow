@@ -150,7 +150,7 @@ function findSigPosition(items, role) {
       pageIndex:  signedItem.pageIndex,
       pageHeight: signedItem.pageHeight,
       x:          signedItem.x + 46,
-      y:          signedItem.y - 4,
+      y:          signedItem.y - 6,   // half row height down to vertically centre
       boxH:       12,
       boxW:       75,
     };
@@ -217,26 +217,24 @@ async function stampPDF(docId) {
 
     // pdfjs y is from bottom of page (same as pdf-lib), so we use directly
     const sigX  = pos.x;
-    const boxH  = pos.boxH || 16;
-    const boxW  = pos.boxW || 80;
+    const boxH  = pos.boxH || 12;
+    const boxW  = pos.boxW || 75;
 
-    // Draw signature
+    // Draw signature — pos.y is the Signed: text baseline, use it directly
     if (s.signature_image && s.signature_image.startsWith('data:image/png;base64,')) {
       try {
         const img   = await pdfDoc.embedPng(Buffer.from(s.signature_image.replace('data:image/png;base64,', ''), 'base64'));
         const scale = boxH / img.height;
         const imgW  = Math.min(boxW, img.width * scale);
-        // y is already offset down in findSigPosition for images
-        page.drawImage(img, { x: sigX, y: pos.y, width: imgW, height: boxH });
+        page.drawImage(img, { x: sigX, y: pos.y - boxH + 6, width: imgW, height: boxH });
       } catch (e) {
         console.error('sig image embed error:', e.message);
-        _drawTypedSig(page, italic, s.name, sigX, pos.y + 10, 10);
+        _drawTypedSig(page, italic, s.name, sigX, pos.y, 10);
       }
     } else if (s.signature && s.signature !== '[drawn]') {
-      // typed: lower y to centre in box
-      _drawTypedSig(page, italic, s.signature, sigX, pos.y - 2, 10);
+      _drawTypedSig(page, italic, s.signature, sigX, pos.y + 4, 10);
     } else {
-      _drawTypedSig(page, italic, s.name, sigX, pos.y - 2, 10);
+      _drawTypedSig(page, italic, s.name, sigX, pos.y + 4, 10);
     }
 
     placed.add(s.id);
